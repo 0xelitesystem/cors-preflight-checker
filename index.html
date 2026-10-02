@@ -1,0 +1,1029 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<title>CORS Preflight Checker</title>
+<meta name="description" content="Enter a cross-origin request and the server's preflight and response headers. See whether the Fetch Standard sends a preflight, which step fails, the header change that fixes it, and where shipping browsers differ from the spec. Runs offline in your browser.">
+<link rel="canonical" href="https://0xelitesystem.github.io/cors-preflight-checker/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="CORS Preflight Checker">
+<meta property="og:description" content="Evaluate one cross-origin request against the server's preflight and response headers, step by step per the WHATWG Fetch Standard, with the minimal fix and a sourced panel for where shipping browsers differ.">
+<meta property="og:url" content="https://0xelitesystem.github.io/cors-preflight-checker/">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"CORS Preflight Checker","applicationCategory":"DeveloperApplication","operatingSystem":"Any (browser)","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"url":"https://0xelitesystem.github.io/cors-preflight-checker/","author":{"@type":"Person","name":"0xelitesystem","url":"https://elitesystem.ai"}}
+</script>
+<script>
+/* Apply a stored theme before first paint. */
+(function () {
+  try {
+    var t = localStorage.getItem("theme");
+    if (t === "dark" || t === "light") { document.documentElement.setAttribute("data-theme", t); }
+  } catch (e) {}
+})();
+</script>
+<style>
+/* Palette verified by math (WCAG relative luminance), every text token against
+   every surface token, both themes. --muted is a border token only and is never
+   used as a text colour.
+
+   LIGHT, on --bg #e8ebef / --panel #ffffff / --code #dcdfe4
+     --ink #0a0a0a 16.56 19.80 14.82   --ink-soft #3d444d 8.24 9.85 7.37
+     --accent #2d6b00 5.46 6.53 4.89   --ok #1a6127 6.31 7.55 5.65
+     --warn #8a4d00 5.59 6.68 5.00     --err #8f1d0c 7.48 8.94 6.69
+     --info #0f4f7a 7.26 8.68 6.50     button text #ffffff on --accent 6.53
+   DARK, on --bg #0a0a0a / --panel #141414 / --code #1c1c1c
+     --ink #e8ebef 16.56 15.41 14.25   --ink-soft #b9c0c9 10.79 10.04 9.29
+     --accent #d4ff3a 17.12 15.94 14.74 --ok #7ee08a 12.18 11.33 10.48
+     --warn #f0c674 12.29 11.44 10.58  --err #ff9b8a 9.72 9.04 8.36
+     --info #8fd3ff 12.19 11.34 10.49  button text #0a0a0a on --accent 17.12 */
+:root {
+  color-scheme: light;
+  --bg: #e8ebef; --panel: #ffffff; --code: #dcdfe4;
+  --ink: #0a0a0a; --ink-soft: #3d444d; --accent: #2d6b00; --on-accent: #ffffff;
+  --ok: #1a6127; --warn: #8a4d00; --err: #8f1d0c; --info: #0f4f7a;
+  --muted: #5b636e;
+  --mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0a0a0a; --panel: #141414; --code: #1c1c1c;
+    --ink: #e8ebef; --ink-soft: #b9c0c9; --accent: #d4ff3a; --on-accent: #0a0a0a;
+    --ok: #7ee08a; --warn: #f0c674; --err: #ff9b8a; --info: #8fd3ff;
+    --muted: #8f98a3;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0a0a0a; --panel: #141414; --code: #1c1c1c;
+  --ink: #e8ebef; --ink-soft: #b9c0c9; --accent: #d4ff3a; --on-accent: #0a0a0a;
+  --ok: #7ee08a; --warn: #f0c674; --err: #ff9b8a; --info: #8fd3ff;
+  --muted: #8f98a3;
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body { margin: 0; padding: 0 1rem 4rem; background: var(--bg); color: var(--ink); font: 16px/1.55 var(--sans); }
+.wrap { max-width: 72rem; margin: 0 auto; }
+header.top { display: flex; gap: 1rem; justify-content: space-between; align-items: flex-start; padding: 2rem 0 1rem; border-bottom: 1px solid var(--muted); }
+h1 { font-size: 1.7rem; line-height: 1.2; margin: 0 0 .35rem; }
+h2 { font-size: 1.25rem; margin: 2.2rem 0 .6rem; }
+h3 { font-size: 1.05rem; margin: 1.3rem 0 .4rem; }
+p { margin: .6rem 0; }
+.lede { color: var(--ink-soft); margin: 0; max-width: 52rem; }
+.note { color: var(--ink-soft); font-size: .93rem; }
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-visible, summary:focus-visible {
+  outline: 3px solid var(--accent); outline-offset: 2px;
+}
+code, kbd, pre { font-family: var(--mono); font-size: .9rem; }
+.panel { background: var(--panel); border: 1px solid var(--muted); border-radius: 6px; padding: 1rem; margin: 1rem 0; }
+.grid { display: grid; gap: 1rem; grid-template-columns: 1fr; }
+@media (min-width: 60rem) { .grid.two { grid-template-columns: 1fr 1fr; } .grid.three { grid-template-columns: 1fr 1fr 1fr; } }
+label { display: block; font-weight: 600; margin: .8rem 0 .25rem; }
+label .hint, .hint { font-weight: 400; color: var(--ink-soft); font-size: .88rem; }
+textarea, input[type="text"], select {
+  width: 100%; font-family: var(--mono); font-size: .9rem; color: var(--ink);
+  background: var(--code); border: 1px solid var(--muted); border-radius: 4px; padding: .5rem .6rem;
+}
+textarea { min-height: 7.5rem; resize: vertical; line-height: 1.45; }
+button {
+  font: inherit; font-size: .95rem; cursor: pointer; border-radius: 4px; padding: .45rem .8rem;
+  background: var(--code); color: var(--ink); border: 1px solid var(--muted);
+}
+button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+button:hover { border-color: var(--accent); }
+.examples { display: flex; flex-wrap: wrap; gap: .5rem; margin: .5rem 0 0; }
+pre.block { background: var(--code); color: var(--ink); border: 1px solid var(--muted); border-radius: 4px; padding: .7rem .8rem; overflow-x: auto; white-space: pre-wrap; word-break: break-word; margin: .5rem 0; }
+.verdict { border-left: 6px solid var(--muted); padding: .6rem .9rem; margin: .8rem 0; background: var(--panel); border-radius: 0 4px 4px 0; }
+.verdict.pass { border-left-color: var(--ok); }
+.verdict.fail { border-left-color: var(--err); }
+.verdict.split { border-left-color: var(--warn); }
+.verdict.info { border-left-color: var(--info); }
+.tag { display: inline-block; font-family: var(--mono); font-size: .8rem; font-weight: 700; padding: .05rem .45rem; border: 1px solid currentColor; border-radius: 3px; margin-right: .4rem; }
+.t-ok { color: var(--ok); } .t-err { color: var(--err); } .t-warn { color: var(--warn); } .t-info { color: var(--info); }
+.step { margin: .5rem 0; padding: .5rem .7rem; border: 1px solid var(--muted); border-radius: 4px; background: var(--panel); }
+.step .sec { font-family: var(--mono); font-size: .85rem; color: var(--ink-soft); }
+.diverge { border: 2px solid var(--warn); border-radius: 6px; padding: .7rem .9rem; margin: 1rem 0; background: var(--panel); }
+.diverge h3 { margin-top: 0; color: var(--warn); }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+th, td { text-align: left; vertical-align: top; padding: .35rem .5rem; border-bottom: 1px solid var(--muted); }
+td code { word-break: break-all; }
+caption { text-align: left; font-weight: 600; padding: .3rem 0; }
+.tablewrap { overflow-x: auto; }
+ul.tight { margin: .3rem 0; padding-left: 1.3rem; }
+ul.tight li { margin: .15rem 0; }
+.err-box { border: 1px solid var(--err); color: var(--err); background: var(--panel); border-radius: 4px; padding: .5rem .7rem; margin: .5rem 0; }
+footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--muted); color: var(--ink-soft); font-size: .9rem; }
+.row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+  <div>
+    <h1>CORS Preflight Checker</h1>
+    <p class="lede">Enter one cross-origin request (method, headers, credentials mode) and what the server answered. The page works out, per the WHATWG Fetch Standard, whether a preflight is sent, which step fails first, what else still fails after that, and the smallest header change that fixes it. Where shipping browsers are known from their source code to differ from the spec, a separate panel says so.</p>
+  </div>
+  <button type="button" id="theme-toggle" aria-label="Switch to dark theme">Dark</button>
+</header>
+
+<main>
+<section aria-labelledby="h-input">
+<h2 id="h-input">1. The request and the server's answers</h2>
+<p class="note">Load an example, or type your own. Everything is evaluated in this page; nothing is sent anywhere. The checker assumes an empty preflight cache and no redirects.</p>
+<div class="examples" id="examples" role="group" aria-label="Load an example"></div>
+
+<div class="grid two">
+  <div class="panel">
+    <h3>Request, as written in your code</h3>
+    <label for="in-origin">Page origin <span class="hint">where the script runs, for example https://app.example.com, or the literal null</span></label>
+    <input type="text" id="in-origin" autocomplete="off" spellcheck="false">
+    <label for="in-target">Target URL</label>
+    <input type="text" id="in-target" autocomplete="off" spellcheck="false">
+    <label for="in-method">Method <span class="hint">exactly as written in code; leave empty for the default GET</span></label>
+    <input type="text" id="in-method" autocomplete="off" spellcheck="false">
+    <div class="grid two">
+      <div>
+        <label for="in-mode">Mode</label>
+        <select id="in-mode">
+          <option value="cors">cors (default for the fetch call and XHR)</option>
+          <option value="no-cors">no-cors</option>
+          <option value="same-origin">same-origin</option>
+        </select>
+      </div>
+      <div>
+        <label for="in-cred">Credentials</label>
+        <select id="in-cred">
+          <option value="same-origin">same-origin (default; XHR without withCredentials)</option>
+          <option value="omit">omit</option>
+          <option value="include">include (XHR withCredentials = true)</option>
+        </select>
+      </div>
+    </div>
+    <label for="in-headers">Request headers <span class="hint">one Name: value per line; a repeated name stays a separate entry</span></label>
+    <textarea id="in-headers" spellcheck="false"></textarea>
+    <div class="grid two">
+      <div>
+        <label for="in-body">Body</label>
+        <select id="in-body">
+          <option value="none">none</option>
+          <option value="string">a string (for example JSON.stringify output)</option>
+          <option value="urlsearchparams">URLSearchParams</option>
+          <option value="formdata">FormData</option>
+          <option value="blob">Blob with a type</option>
+        </select>
+      </div>
+      <div>
+        <label for="in-blobtype">Blob type <span class="hint">used only for a Blob body</span></label>
+        <input type="text" id="in-blobtype" autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <h3>What the server answered</h3>
+    <label for="in-preflight">Preflight response <span class="hint">optional first line HTTP/1.1 204; then one header per line. Without a status line the status is taken as 200.</span></label>
+    <textarea id="in-preflight" spellcheck="false"></textarea>
+    <label for="in-actual">Actual response <span class="hint">headers of the response to the real request; its status does not matter to CORS</span></label>
+    <textarea id="in-actual" spellcheck="false"></textarea>
+    <div class="row" style="margin-top:.8rem">
+      <button type="button" class="primary" id="btn-check">Check</button>
+      <span class="hint">Results also update as you type.</span>
+    </div>
+  </div>
+</div>
+</section>
+
+<section aria-labelledby="h-out">
+<h2 id="h-out">2. Verdict, per the Fetch Standard</h2>
+<div id="out" aria-live="polite"></div>
+</section>
+
+<section aria-labelledby="h-engine">
+<h2 id="h-engine">3. Your browser, right now</h2>
+<p class="note">These probes construct Request objects in this page and read back what your engine did with them. Constructing a Request sends nothing; the page makes no network call. Each row shows what the Fetch Standard expects next to what your browser produced, and any mismatch is flagged rather than hidden.</p>
+<div id="engine"></div>
+<button type="button" id="btn-engine">Run the probes again</button>
+</section>
+
+<section aria-labelledby="h-self">
+<h2 id="h-self">4. Self test</h2>
+<p class="note">Every case below runs through the same evaluator as section 2. Expected values are the Fetch Standard verdicts. Rows marked "spec only" were never measured in a browser by the author; for two of them, a GET with a body and the implicit Content-Type of a string body, section 3 probes your own browser. The last row is a positive control: an assertion written to be wrong. If it ever reports that it held, the suite is not really running.</p>
+<p id="self-summary"></p>
+<button type="button" id="btn-self">Run the self test again</button>
+<div class="tablewrap" id="self"></div>
+</section>
+
+<section aria-labelledby="h-scope">
+<h2 id="h-scope">5. What this checker models, and what it does not</h2>
+<div class="panel">
+<h3>Modelled, in this order</h3>
+<ul class="tight">
+  <li>A. Request constructor: method token, forbidden methods, method normalization, no-cors limits, body with GET or HEAD, implicit Content-Type of the body. Fetch Standard 2.2.1 Methods and 5.4 Request class (fetch.spec.whatwg.org/#request-class).</li>
+  <li>B. Header validation and the forbidden request-header list, which drops headers silently. Fetch Standard 5.1 Headers class and 2.2.2 Headers (fetch.spec.whatwg.org/#forbidden-request-header).</li>
+  <li>C. CORS-safelisted request-headers, the 128 byte limit, the strict MIME type parse for Content-Type, the single range rule, and the 1024 byte total. Fetch Standard 2.2.2 (fetch.spec.whatwg.org/#cors-safelisted-request-header) and MIME Sniffing 4.4 (mimesniff.spec.whatwg.org/#parsing-a-mime-type).</li>
+  <li>D. Whether a preflight is needed. Fetch Standard 4.1 Main fetch (fetch.spec.whatwg.org/#main-fetch).</li>
+  <li>E. The preflight and its checks. Fetch Standard 4.8 CORS-preflight fetch (fetch.spec.whatwg.org/#cors-preflight-fetch), 2.2.3 ok status, 3.3.4 header syntax.</li>
+  <li>F. The CORS check on the actual response. Fetch Standard 4.10 CORS check (fetch.spec.whatwg.org/#cors-check).</li>
+</ul>
+<h3>Not modelled</h3>
+<ul class="tight">
+  <li>Local Network Access and private network checks. They are browser specific and not part of the Fetch Standard.</li>
+  <li>Redirects of the actual request. A cross-origin redirect taints the origin, which then serializes as null.</li>
+  <li>Service workers.</li>
+  <li>The use-CORS-preflight flag, which forces a preflight (for example XHR upload listeners).</li>
+  <li>The CORS protocol exceptions to the Content-Type safelist (Fetch Standard 3.3.7).</li>
+  <li>Access-Control-Expose-Headers, beyond the note that it decides which response headers your script can read.</li>
+  <li>Mixed content, CORP and COEP.</li>
+  <li>The preflight cache. The checker assumes it is empty, so a cached earlier answer can make a real browser behave differently from this page for a short while.</li>
+</ul>
+<p class="note">Implemented from the Fetch Standard as last updated 21 September 2026 and the MIME Sniffing Standard as last updated 17 July 2026. This is an independent tool, not affiliated with or endorsed by the WHATWG, any browser vendor, or MDN.</p>
+</div>
+</section>
+</main>
+
+<footer>
+  <p>MIT licensed. Single file, no network calls, no storage beyond your theme choice. Source: <a href="https://github.com/0xelitesystem/cors-preflight-checker">github.com/0xelitesystem/cors-preflight-checker</a>. Built by <a href="https://elitesystem.ai">elitesystem.ai</a>.</p>
+</footer>
+</div>
+
+<script>
+(function () {
+"use strict";
+
+/* ---------- constants from the Fetch Standard ---------- */
+var TOKEN_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+var FORBIDDEN_METHODS = ["CONNECT", "TRACE", "TRACK"];
+var NORMALIZED_METHODS = ["DELETE", "GET", "HEAD", "OPTIONS", "POST", "PUT"];
+var SAFELISTED_METHODS = ["GET", "HEAD", "POST"];
+var FORBIDDEN_NAMES = ["accept-charset", "accept-encoding", "access-control-request-headers", "access-control-request-method", "connection", "content-length", "cookie", "cookie2", "date", "dnt", "expect", "host", "keep-alive", "origin", "referer", "set-cookie", "te", "trailer", "transfer-encoding", "upgrade", "via"];
+var METHOD_OVERRIDE_NAMES = ["x-http-method", "x-http-method-override", "x-method-override"];
+var NO_CORS_SAFELISTED_NAMES = ["accept", "accept-language", "content-language", "content-type"];
+var UNSAFE_BYTES = [0x22, 0x28, 0x29, 0x3A, 0x3C, 0x3E, 0x3F, 0x40, 0x5B, 0x5C, 0x5D, 0x7B, 0x7D, 0x7F];
+/* Names Chromium's IsCorsSafelistedHeader (services/network/public/cpp/cors/cors.cc) accepts beyond the spec, excluding sec-ch-* which scripts cannot set. */
+var CHROMIUM_EXTRA = ["intervention", "device-memory", "dpr", "width", "viewport-width", "rtt", "downlink", "ect", "save-data"];
+var FORMDATA_TYPE = "multipart/form-data; boundary=----formdata-boundary-example";
+
+function lc(s) { return String(s).toLowerCase(); }
+function isToken(s) { return TOKEN_RE.test(s); }
+function nonLatin1(s) { for (var i = 0; i < s.length; i++) { if (s.charCodeAt(i) > 0xFF) { return true; } } return false; }
+function trimHttpWs(s) { return s.replace(/^[\t\n\r ]+|[\t\n\r ]+$/g, ""); }
+function trimTabSpace(s) { return s.replace(/^[\t ]+|[\t ]+$/g, ""); }
+function ciIn(list, name) { var n = lc(name); for (var i = 0; i < list.length; i++) { if (lc(list[i]) === n) { return true; } } return false; }
+function hasUnsafeByte(v) { for (var i = 0; i < v.length; i++) { var c = v.charCodeAt(i); if ((c < 0x20 && c !== 0x09) || UNSAFE_BYTES.indexOf(c) !== -1) { return true; } } return false; }
+
+/* 2.2.2 get, decode, and split a header value */
+function getDecodeSplit(input) {
+  var values = [], pos = 0, temp = "";
+  while (true) {
+    while (pos < input.length && input[pos] !== "\"" && input[pos] !== ",") { temp += input[pos]; pos++; }
+    if (pos < input.length && input[pos] === "\"") {
+      var q = collectQuoted(input, pos); temp += q.value; pos = q.pos;
+      if (pos < input.length) { continue; }
+    }
+    values.push(trimTabSpace(temp)); temp = "";
+    if (pos >= input.length) { return values; }
+    pos++;
+  }
+}
+/* collect an HTTP quoted string, extract-value false: returns the raw span */
+function collectQuoted(input, pos) {
+  var start = pos; pos++;
+  while (true) {
+    while (pos < input.length && input[pos] !== "\"" && input[pos] !== "\\") { pos++; }
+    if (pos >= input.length) { break; }
+    var q = input[pos]; pos++;
+    if (q === "\\") { if (pos >= input.length) { break; } pos++; }
+    else { break; }
+  }
+  return { value: input.slice(start, pos), pos: pos };
+}
+
+/* MIME Sniffing 4.4 parse a MIME type: only the parts that decide failure and the essence */
+function parseMime(input) {
+  input = trimHttpWs(input);
+  var slash = input.indexOf("/");
+  var type = slash === -1 ? input : input.slice(0, slash);
+  if (type === "" || !isToken(type)) { return null; }
+  if (slash === -1) { return null; }
+  var rest = input.slice(slash + 1);
+  var semi = rest.indexOf(";");
+  var subtype = (semi === -1 ? rest : rest.slice(0, semi)).replace(/[\t\n\r ]+$/, "");
+  if (subtype === "" || !isToken(subtype)) { return null; }
+  return { essence: lc(type) + "/" + lc(subtype) };
+}
+
+/* 2.2.2 parse a single range header value, allowWhitespace false */
+function parseRange(v) {
+  if (v.slice(0, 5) !== "bytes") { return null; }
+  var pos = 5;
+  if (v[pos] !== "=") { return null; }
+  pos++;
+  var s = ""; while (pos < v.length && v[pos] >= "0" && v[pos] <= "9") { s += v[pos]; pos++; }
+  if (v[pos] !== "-") { return null; }
+  pos++;
+  var e = ""; while (pos < v.length && v[pos] >= "0" && v[pos] <= "9") { e += v[pos]; pos++; }
+  if (pos < v.length) { return null; }
+  var sv = s === "" ? null : Number(s), ev = e === "" ? null : Number(e);
+  if (sv === null && ev === null) { return null; }
+  if (sv !== null && ev !== null && sv > ev) { return null; }
+  return [sv, ev];
+}
+
+/* 2.2.2 CORS-safelisted request-header */
+function safelist(name, value) {
+  if (value.length > 128) { return { ok: false, why: "value is " + value.length + " bytes; the limit is 128" }; }
+  var n = lc(name);
+  if (n === "accept") {
+    return hasUnsafeByte(value) ? { ok: false, why: "value contains a CORS-unsafe request-header byte" } : { ok: true, why: "Accept with no unsafe byte" };
+  }
+  if (n === "accept-language" || n === "content-language") {
+    for (var i = 0; i < value.length; i++) {
+      var c = value.charCodeAt(i);
+      var good = (c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A) || c === 0x20 || c === 0x2A || c === 0x2C || c === 0x2D || c === 0x2E || c === 0x3B || c === 0x3D;
+      if (!good) { return { ok: false, why: "character '" + value[i] + "' is outside 0-9 A-Z a-z space * , - . ; =" }; }
+    }
+    return { ok: true, why: "only allowed characters" };
+  }
+  if (n === "content-type") {
+    if (hasUnsafeByte(value)) { return { ok: false, why: "value contains a CORS-unsafe request-header byte" }; }
+    var m = parseMime(value);
+    if (!m) { return { ok: false, why: "not a valid MIME type under the strict MIME Sniffing parse" }; }
+    if (["application/x-www-form-urlencoded", "multipart/form-data", "text/plain"].indexOf(m.essence) === -1) {
+      return { ok: false, why: "essence " + m.essence + " is not application/x-www-form-urlencoded, multipart/form-data or text/plain" };
+    }
+    return { ok: true, why: "essence " + m.essence };
+  }
+  if (n === "range") {
+    var r = parseRange(value);
+    if (!r) { return { ok: false, why: "not a single bytes=start-end range (no whitespace allowed)" }; }
+    if (r[0] === null) { return { ok: false, why: "suffix ranges such as bytes=-500 are not safelisted" }; }
+    return { ok: true, why: "simple range" };
+  }
+  return { ok: false, why: "not one of Accept, Accept-Language, Content-Language, Content-Type, Range" };
+}
+
+/* 2.2.2 CORS-unsafe request-header names */
+function unsafeNames(list) {
+  var unsafe = [], potential = [], size = 0, rows = [];
+  for (var i = 0; i < list.length; i++) {
+    var s = safelist(list[i].name, list[i].value);
+    rows.push({ name: list[i].name, value: list[i].value, ok: s.ok, why: s.why });
+    if (!s.ok) { unsafe.push(list[i].name); } else { potential.push(list[i].name); size += list[i].value.length; }
+  }
+  var overflow = size > 1024;
+  if (overflow) { unsafe = unsafe.concat(potential); }
+  var set = [];
+  unsafe.forEach(function (x) { var l = lc(x); if (set.indexOf(l) === -1) { set.push(l); } });
+  set.sort(function (a, b) { return a < b ? -1 : a > b ? 1 : 0; });
+  return { names: set, size: size, overflow: overflow, rows: rows };
+}
+
+/* 2.2.2 forbidden request-header */
+function forbidden(name, value) {
+  var n = lc(name);
+  if (FORBIDDEN_NAMES.indexOf(n) !== -1) { return "a forbidden request-header name"; }
+  if (n.indexOf("proxy-") === 0 || n.indexOf("sec-") === 0) { return "names starting with proxy- or sec- are forbidden"; }
+  if (METHOD_OVERRIDE_NAMES.indexOf(n) !== -1) {
+    var parts = getDecodeSplit(value);
+    for (var i = 0; i < parts.length; i++) { if (FORBIDDEN_METHODS.indexOf(parts[i].toUpperCase()) !== -1) { return "a method override naming the forbidden method " + parts[i]; } }
+  }
+  return null;
+}
+
+function isNoCorsSafelisted(name, value) {
+  if (NO_CORS_SAFELISTED_NAMES.indexOf(lc(name)) === -1) { return false; }
+  return safelist(name, value).ok;
+}
+
+/* parse a pasted header block. Optional status line. */
+function parseBlock(text) {
+  var out = { status: null, headers: [], notes: [] };
+  var lines = String(text || "").split(/\r?\n/);
+  var first = true;
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (/^\s*$/.test(line)) { continue; }
+    if (first) {
+      first = false;
+      var m = /^\s*HTTP\/\d(?:\.\d)?\s+(\d{3})\b/i.exec(line);
+      if (m) { out.status = Number(m[1]); continue; }
+    }
+    if (/^[\t ]/.test(line)) { out.notes.push("Line " + (i + 1) + " starts with whitespace (an obsolete folded line) and was ignored."); continue; }
+    var c = line.indexOf(":");
+    if (c <= 0) { out.notes.push("Line " + (i + 1) + " has no header name and colon and was ignored."); continue; }
+    out.headers.push({ name: line.slice(0, c).trim(), value: trimTabSpace(line.slice(c + 1)) });
+  }
+  return out;
+}
+/* 2.2.2 get: combine same-name values with ", " */
+function getHeader(headers, name) {
+  var vals = [];
+  headers.forEach(function (h) { if (lc(h.name) === lc(name)) { vals.push(h.value); } });
+  return vals.length ? vals.join(", ") : null;
+}
+/* 2.2.2 extract header list values for #method and #field-name */
+function extractList(headers, name) {
+  var any = false, items = [], bad = [];
+  headers.forEach(function (h) {
+    if (lc(h.name) !== lc(name)) { return; }
+    any = true;
+    h.value.split(",").forEach(function (p) {
+      var t = trimTabSpace(p);
+      if (t === "") { return; }
+      if (!isToken(t)) { bad.push(t); } else { items.push(t); }
+    });
+  });
+  if (!any) { return { list: null, bad: [] }; }
+  return { list: bad.length ? "failure" : items, bad: bad, items: items };
+}
+/* 4.10 CORS check */
+function corsCheck(headers, origin, cred) {
+  var acao = getHeader(headers, "Access-Control-Allow-Origin");
+  if (acao === null) { return { ok: false, why: "Access-Control-Allow-Origin is missing.", code: "no-acao" }; }
+  if (cred !== "include" && acao === "*") { return { ok: true, why: "Access-Control-Allow-Origin is * and credentials mode is not include." }; }
+  if (acao !== origin) {
+    var why;
+    if (acao === "*") { why = "Access-Control-Allow-Origin is *, which never matches when credentials mode is include."; }
+    else if (acao.indexOf(", ") !== -1) { why = "Access-Control-Allow-Origin was sent more than once, so its combined value is \"" + acao + "\", which is not the origin."; }
+    else if (acao.replace(/\/$/, "") === origin) { why = "Access-Control-Allow-Origin \"" + acao + "\" has a trailing slash. A serialized origin has none."; }
+    else if (lc(acao) === origin) { why = "Access-Control-Allow-Origin \"" + acao + "\" differs from \"" + origin + "\" only in case; the comparison is byte for byte."; }
+    else { why = "Access-Control-Allow-Origin \"" + acao + "\" is not byte for byte equal to the request origin \"" + origin + "\"."; }
+    return { ok: false, why: why, code: acao === "*" ? "star-include" : "mismatch" };
+  }
+  if (cred !== "include") { return { ok: true, why: "Access-Control-Allow-Origin equals the origin." }; }
+  var acac = getHeader(headers, "Access-Control-Allow-Credentials");
+  if (acac === "true") { return { ok: true, why: "Origin matches and Access-Control-Allow-Credentials is true." }; }
+  return { ok: false, code: "acac", why: acac === null ? "Credentials mode is include and Access-Control-Allow-Credentials is missing." : "Access-Control-Allow-Credentials is \"" + acac + "\"; only the exact lowercase value true is accepted." };
+}
+
+/* ---------- the evaluator ---------- */
+function evaluate(inp) {
+  var R = { kind: "cors", fails: [], warnings: [], divergences: [], dropped: [], sent: [], notes: [] };
+  /* origin */
+  var originText = trimHttpWs(inp.origin || "");
+  if (originText === "") { return err(R, "input", "Enter the page origin."); }
+  var origin;
+  if (originText === "null") { origin = "null"; }
+  else {
+    var ou;
+    try { ou = new URL(originText); } catch (e) { return err(R, "input", "The page origin \"" + originText + "\" is not a URL the URL parser accepts."); }
+    origin = ou.origin;
+    if (origin !== originText) { R.notes.push("Page origin serialized as " + origin + " (scheme, lowercase host, default port dropped, no path)."); }
+  }
+  R.origin = origin;
+  /* A. Request constructor */
+  var targetText = trimHttpWs(inp.target || "");
+  var tu;
+  try { tu = new URL(targetText); } catch (e) { return err(R, "typeerror", "TypeError: the target URL does not parse (Request constructor, 5.4).", "5.4"); }
+  if (tu.username !== "" || tu.password !== "") { return err(R, "typeerror", "TypeError: the target URL contains a username or password (Request constructor, 5.4).", "5.4"); }
+  R.target = tu;
+  var written = inp.method === undefined || inp.method === "" ? null : String(inp.method);
+  var method = written === null ? "GET" : written;
+  R.methodWritten = written;
+  if (nonLatin1(method) || !isToken(method)) { return err(R, "typeerror", "TypeError: \"" + method + "\" is not a method token (2.2.1, 5.4).", "2.2.1"); }
+  if (FORBIDDEN_METHODS.indexOf(method.toUpperCase()) !== -1) { return err(R, "typeerror", "TypeError: " + method + " is a forbidden method (CONNECT, TRACE and TRACK, any case; 2.2.1).", "2.2.1"); }
+  if (NORMALIZED_METHODS.indexOf(method.toUpperCase()) !== -1) { method = method.toUpperCase(); }
+  R.method = method;
+  if (written !== null && method !== written) { R.notes.push("Method " + written + " is normalized to " + method + " (2.2.1 normalizes DELETE, GET, HEAD, OPTIONS, POST and PUT only)."); }
+  if (method.toUpperCase() === "PATCH" && method !== "PATCH") {
+    R.warnings.push({ title: "This method goes out as \"" + method + "\", not PATCH", text: "Normalization upper-cases only DELETE, GET, HEAD, OPTIONS, POST and PUT, so " + method + " is sent verbatim. The Fetch Standard's own note in 2.2.1: \"Using `patch` is highly likely to result in a `405 Method Not Allowed`. `PATCH` is much more likely to succeed.\" HTTP agrees that the method token is case-sensitive (RFC 9110, section 9.1)." });
+  }
+  var mode = inp.mode || "cors", cred = inp.credentials || "same-origin";
+  R.mode = mode; R.cred = cred;
+  if (mode === "no-cors" && SAFELISTED_METHODS.indexOf(method) === -1) { return err(R, "typeerror", "TypeError: mode no-cors allows only GET, HEAD and POST (5.4).", "5.4"); }
+  /* B. headers */
+  var lines = String(inp.headers || "").split(/\r?\n/);
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (/^\s*$/.test(line)) { continue; }
+    var c = line.indexOf(":");
+    if (c === -1) { return err(R, "input", "Request header line " + (i + 1) + " has no colon. Write one Name: value per line."); }
+    var name = line.slice(0, c).trim(), value = trimHttpWs(line.slice(c + 1));
+    if (name === "" || nonLatin1(name) || !isToken(name)) { return err(R, "typeerror", "TypeError: \"" + name + "\" is not a valid header name (5.1 validate).", "5.1"); }
+    if (nonLatin1(value) || /[\0\r\n]/.test(value)) { return err(R, "typeerror", "TypeError: the value of " + name + " is not a valid header value (5.1 validate).", "5.1"); }
+    appendHeader(R, name, value, mode);
+  }
+  /* body */
+  var body = inp.body || "none";
+  if (body !== "none" && (method === "GET" || method === "HEAD")) { return err(R, "typeerror", "TypeError: a request with a body cannot use GET or HEAD (5.4).", "5.4"); }
+  var implicitType = null;
+  if (body === "string") { implicitType = "text/plain;charset=UTF-8"; }
+  else if (body === "urlsearchparams") { implicitType = "application/x-www-form-urlencoded;charset=UTF-8"; }
+  else if (body === "formdata") { implicitType = FORMDATA_TYPE; }
+  else if (body === "blob") { var bt = String(inp.blobType || ""); implicitType = bt === "" ? null : bt; }
+  if (implicitType !== null && !ciIn(R.sent.map(function (h) { return h.name; }), "content-type")) {
+    R.implicitType = implicitType;
+    appendHeader(R, "Content-Type", implicitType, mode, true);
+  }
+  /* 4.1 main fetch */
+  if (origin !== "null" && tu.origin === origin) { R.kind = "same-origin"; return R; }
+  if (tu.protocol === "data:") { R.kind = "data"; return R; }
+  if (mode === "same-origin") { R.kind = "network"; R.netWhy = "Mode same-origin with a cross-origin URL is a network error (4.1)."; return R; }
+  if (mode === "no-cors") { R.kind = "opaque"; return R; }
+  if (tu.protocol !== "http:" && tu.protocol !== "https:") { R.kind = "network"; R.netWhy = "The scheme " + tu.protocol.replace(":", "") + " is not http or https, so main fetch returns a network error (4.1)."; return R; }
+  /* C. safelist */
+  var U = unsafeNames(R.sent);
+  R.safelistRows = U.rows; R.unsafe = U.names; R.overflow = U.overflow; R.safeSize = U.size;
+  R.acrh = U.names.join(",");
+  /* D. preflight needed */
+  R.preflight = SAFELISTED_METHODS.indexOf(method) === -1 || U.names.length > 0;
+  R.preflightWhy = [];
+  if (SAFELISTED_METHODS.indexOf(method) === -1) { R.preflightWhy.push("the method " + method + " is not exactly GET, HEAD or POST"); }
+  if (U.names.length) { R.preflightWhy.push("these header names are not CORS-safelisted: " + U.names.join(", ") + (U.overflow ? " (the safelisted values add up to " + U.size + " bytes, over 1024, so all of them count)" : "")); }
+  var hasAuth = ciIn(R.sent.map(function (h) { return h.name; }), "authorization");
+  /* Chromium extra safelist (divergence C2) */
+  var extra = R.sent.filter(function (h) { return CHROMIUM_EXTRA.indexOf(lc(h.name)) !== -1; });
+  if (extra.length) {
+    R.chromiumExtra = extra.map(function (h) { return h.name; });
+    R.divergences.push({ title: "Chromium safelists " + R.chromiumExtra.join(", "), text: "Chromium-based browsers treat this header as safelisted when its value passes Chromium's own format check, so they may skip the preflight the spec requires. Firefox follows the spec. For Save-Data the value must be on (any case). Source: services/network/public/cpp/cors/cors.cc, IsCorsSafelistedHeader, in the Chromium repository." });
+  }
+  /* E. preflight */
+  var pf = parseBlock(inp.preflight), ac = parseBlock(inp.actual);
+  R.pfParsed = pf; R.acParsed = ac;
+  pf.notes.forEach(function (n) { R.notes.push("Preflight response: " + n); });
+  ac.notes.forEach(function (n) { R.notes.push("Actual response: " + n); });
+  if (R.preflight) {
+    var pfStatus = pf.status === null ? 200 : pf.status;
+    R.pfStatus = pfStatus;
+    var e1 = corsCheck(pf.headers, origin, cred);
+    if (!e1.ok) { fail(R, "E1", "4.10 via 4.8", "The preflight response fails the CORS check", e1.why + " The CORS check on the preflight uses the request's credentials mode (" + cred + ")."); }
+    if (pfStatus < 200 || pfStatus > 299) {
+      fail(R, "E2", "2.2.3 and 4.8", "The preflight status " + pfStatus + " is not an ok status", (pfStatus >= 300 && pfStatus <= 399 ? "A redirect is not followed for a preflight. " : "") + (pfStatus === 401 || pfStatus === 403 ? "A preflight never carries credentials (3.3.5), so middleware that demands authentication on OPTIONS rejects every preflight. " : "") + "Answer OPTIONS with a status from 200 to 299, for example 204.");
+    }
+    var M = extractList(pf.headers, "Access-Control-Allow-Methods");
+    var H = extractList(pf.headers, "Access-Control-Allow-Headers");
+    if (M.list === "failure") { fail(R, "E3", "3.3.4 and 4.8", "Access-Control-Allow-Methods does not parse", "Each comma separated item must be a method token. Not a token: " + M.bad.map(q).join(", ") + ". A parse failure fails the whole preflight."); }
+    if (H.list === "failure") { fail(R, "E3", "3.3.4 and 4.8", "Access-Control-Allow-Headers does not parse", "Each comma separated item must be a header name token. Not a token: " + H.bad.map(q).join(", ") + ". A parse failure fails the whole preflight."); }
+    var methods = M.list === null ? [] : M.list === "failure" ? null : M.list;
+    var hnames = H.list === null ? [] : H.list === "failure" ? null : H.list;
+    R.methods = methods; R.hnames = hnames;
+    if (methods !== null) {
+      var inList = methods.indexOf(method) !== -1;
+      var star = methods.indexOf("*") !== -1;
+      if (!inList && SAFELISTED_METHODS.indexOf(method) === -1 && (cred === "include" || !star)) {
+        var near = methods.filter(function (m) { return m.toUpperCase() === method.toUpperCase(); });
+        var d = "The method is compared case-sensitively and must appear exactly as sent: \"" + method + "\".";
+        if (near.length) { d += " The list has " + near.map(q).join(", ") + ", which differs only in case, so it does not count."; }
+        if (star && cred === "include") { d += " The * in the list is a literal method name when credentials mode is include."; }
+        if (!methods.length) { d += " Access-Control-Allow-Methods is missing or empty."; }
+        fail(R, "E4", "4.8", "Method " + method + " is not allowed by the preflight", d);
+      }
+    } else { R.notes.push("Step E4 (method) cannot be evaluated until Access-Control-Allow-Methods parses."); }
+    if (hnames !== null) {
+      var hstar = hnames.indexOf("*") !== -1;
+      if (hasAuth && !ciIn(hnames, "authorization")) {
+        var engineAllows = cred !== "include" && hstar;
+        fail(R, "E5", "4.8", "Authorization is not listed by name in Access-Control-Allow-Headers", "Authorization is the CORS non-wildcard request-header name (2.2.2): * never stands for it in the Fetch Standard, it must be listed explicitly." + (cred === "include" && hstar ? " With credentials mode include the * is a literal name anyway." : ""), engineAllows);
+        if (engineAllows) {
+          R.split = true;
+          R.divergences.push({ title: "Authorization under *", text: "Fetch Standard: fails at 4.8. Shipping browsers: currently allowed, with a deprecation warning in Chromium and Firefox. Chromium declares kCorsNonWildcardRequestHeadersSupport as FEATURE_DISABLED_BY_DEFAULT (services/network/public/cpp/features.cc) and lists an AuthorizationCoveredByWildcard deprecation. Firefox sets network.cors_preflight.authorization_covered_by_wildcard to true (modules/libpref/init/StaticPrefList.yaml) and logs a deprecation warning in nsCORSListenerProxy.cpp. WebKit's validateCrossOriginHeaders (CrossOriginPreflightResultCache.cpp) lets * cover every header with no Authorization exception. MDN browser-compat-data, subfeature authorization_not_covered_by_wildcard, read 2026-10-01: chrome false, safari false, firefox 115 only with that preference set to false. Listing Authorization explicitly passes under both readings." });
+        }
+      }
+      var missing = U.names.filter(function (n) { return !ciIn(hnames, n) && (cred === "include" || !hstar); });
+      if (missing.length) {
+        fail(R, "E6", "4.8", "Header name" + (missing.length > 1 ? "s " : " ") + missing.join(", ") + " not allowed by the preflight", "Every CORS-unsafe request-header name must match an item of Access-Control-Allow-Headers, compared case-insensitively" + (cred === "include" ? ". With credentials mode include, * is a literal name and covers nothing." : ", unless the list contains * and credentials mode is not include.") + (H.list === null ? " Access-Control-Allow-Headers is missing." : ""));
+      }
+    } else { R.notes.push("Steps E5 and E6 (headers) cannot be evaluated until Access-Control-Allow-Headers parses."); }
+    var maxAge = pf.headers.filter(function (h) { return lc(h.name) === "access-control-max-age"; });
+    R.maxAge = maxAge.length === 1 && /^\d+$/.test(maxAge[0].value) ? Number(maxAge[0].value) : null;
+  }
+  /* F. actual response */
+  var f = corsCheck(ac.headers, origin, cred);
+  if (!f.ok) { fail(R, "F", "4.10", "The actual response fails the CORS check", f.why + (R.preflight ? " (This is checked once the preflight passes.)" : "")); }
+  R.verdict = R.fails.length ? "fail" : "pass";
+  R.engineVerdict = R.fails.length && R.fails.every(function (x) { return x.engineAllows; }) ? "pass" : R.verdict;
+  R.fix = buildFix(R);
+  return R;
+}
+function q(s) { return "\"" + s + "\""; }
+function err(R, kind, msg, sec) { R.kind = kind; R.message = msg; R.section = sec || ""; return R; }
+function fail(R, step, sec, title, detail, engineAllows) { R.fails.push({ step: step, sec: sec, title: title, detail: detail, engineAllows: !!engineAllows }); }
+function appendHeader(R, name, value, mode, implicit) {
+  var why = forbidden(name, value);
+  if (why) { R.dropped.push({ name: name, value: value, why: "never sent: " + why + " (2.2.2); the browser drops it silently" }); return; }
+  if (mode === "no-cors") {
+    var prior = getHeader(R.sent, name);
+    var temp = prior === null ? value : prior + ", " + value;
+    if (!isNoCorsSafelisted(name, temp)) { R.dropped.push({ name: name, value: value, why: "dropped in no-cors: only no-CORS-safelisted headers survive" }); return; }
+    if (lc(name) === "range") { R.dropped.push({ name: name, value: value, why: "dropped in no-cors: Range is a privileged no-CORS request-header" }); return; }
+  }
+  R.sent.push({ name: name, value: value, implicit: !!implicit });
+}
+function buildFix(R) {
+  var fx = { preflight: [], actual: [], client: [] };
+  if (R.verdict === "pass" && !R.split) { return fx; }
+  var inc = R.cred === "include";
+  var acao = R.origin;
+  if (R.preflight) {
+    fx.preflight.push("HTTP/1.1 204 No Content");
+    fx.preflight.push("Access-Control-Allow-Origin: " + acao);
+    if (inc) { fx.preflight.push("Access-Control-Allow-Credentials: true"); }
+    if (SAFELISTED_METHODS.indexOf(R.method) === -1) { fx.preflight.push("Access-Control-Allow-Methods: " + R.method); }
+    if (R.unsafe.length) { fx.preflight.push("Access-Control-Allow-Headers: " + R.unsafe.map(function (n) { return n === "authorization" ? "Authorization" : n; }).join(", ")); }
+    fx.preflight.push("Vary: Origin");
+  }
+  fx.actual.push("Access-Control-Allow-Origin: " + acao);
+  if (inc) { fx.actual.push("Access-Control-Allow-Credentials: true"); }
+  fx.actual.push("Vary: Origin");
+  fx.starOk = !inc;
+  /* client side alternatives */
+  /* a casing fix on the client comes first: allowing "patch" on the server only moves the failure to its router */
+  fx.method = "";
+  if (R.method !== R.method.toUpperCase() && R.methods && R.methods.indexOf(R.method.toUpperCase()) !== -1) {
+    fx.method = "Write the method as " + R.method.toUpperCase() + " in your code. The server's list already has it, and the server is far more likely to accept the upper-case token on the real request too.";
+  } else if (R.method.toUpperCase() === "PATCH" && R.method !== "PATCH") {
+    fx.method = "Write the method as PATCH in your code rather than allowing \"" + R.method + "\" on the server, and answer the preflight with Access-Control-Allow-Methods: PATCH. A server that routes PATCH usually rejects \"" + R.method + "\" on the real request.";
+  }
+  (R.safelistRows || []).forEach(function (r) {
+    if (r.ok) { return; }
+    var n = lc(r.name);
+    if (n === "content-type") { fx.client.push("Send Content-Type as text/plain, application/x-www-form-urlencoded or multipart/form-data with no unsafe bytes, if the server can accept it, and no preflight is needed for that header."); }
+    else if (n === "authorization") { /* needed by most APIs; no client alternative offered */ }
+    else if (["accept", "accept-language", "content-language", "range"].indexOf(n) !== -1) { fx.client.push("Shorten or simplify the " + r.name + " value so it is safelisted (" + r.why + ")."); }
+    else { fx.client.push("Drop the " + r.name + " header if the server does not need it; it is not safelisted, so it alone forces a preflight."); }
+  });
+  var seen = {}; fx.client = fx.client.filter(function (x) { if (seen[x]) { return false; } seen[x] = 1; return true; });
+  return fx;
+}
+
+/* ---------- rendering (DOM only, never innerHTML with input) ---------- */
+function el(tag, attrs) {
+  var e = document.createElement(tag);
+  if (attrs) { Object.keys(attrs).forEach(function (k) { if (k === "text") { e.textContent = attrs[k]; } else if (k === "cls") { e.className = attrs[k]; } else { e.setAttribute(k, attrs[k]); } }); }
+  for (var i = 2; i < arguments.length; i++) { var c = arguments[i]; if (c === null || c === undefined) { continue; } e.appendChild(typeof c === "string" ? document.createTextNode(c) : c); }
+  return e;
+}
+function tag(text, cls) { return el("span", { cls: "tag " + cls, text: text }); }
+function pre(lines) { return el("pre", { cls: "block", text: lines.join("\n") }); }
+
+/* The headline. SPLIT only when the Authorization exemption is the sole reason
+   engines differ AND nothing else that engines enforce fails. */
+function banner(R) {
+  if (R.verdict === "pass") { return { kind: "pass", text: "Per the Fetch Standard the response is shared with your script." }; }
+  if (R.split && R.engineVerdict === "pass") { return { kind: "split", text: "Fetch Standard: fails at 4.8. Shipping browsers: currently allowed, with a deprecation warning in Chromium and Firefox." }; }
+  var t = "Per the Fetch Standard this request fails at step " + R.fails[0].step + " (" + R.fails[0].sec + ").";
+  var hard = R.fails.filter(function (x) { return !x.engineAllows; })[0];
+  if (R.split && hard) { t += hard === R.fails[0] ? " Shipping browsers block it at that step too, whatever they do with Authorization under *." : " Shipping browsers block it too: their Authorization exemption does not help, because step " + hard.step + " (" + hard.sec + ") also fails."; }
+  return { kind: "fail", text: t };
+}
+function render(R) {
+  var out = document.getElementById("out");
+  out.textContent = "";
+  if (R.kind === "input") { out.appendChild(el("div", { cls: "err-box", role: "alert", text: R.message })); return; }
+  if (R.kind === "typeerror") {
+    out.appendChild(el("div", { cls: "verdict fail" }, tag("TypeError", "t-err"), el("strong", { text: "Per the Fetch Standard the request is never created." }), el("p", { text: R.message })));
+    return;
+  }
+  var path = R.target.pathname + R.target.search;
+  if (R.kind === "same-origin") { out.appendChild(el("div", { cls: "verdict info" }, tag("N/A", "t-info"), el("strong", { text: "Same-origin, CORS does not apply." }), el("p", { cls: "note", text: "The target origin " + R.target.origin + " equals the page origin, so main fetch (4.1) uses a basic fetch with no CORS checks." }))); return; }
+  if (R.kind === "data") { out.appendChild(el("div", { cls: "verdict info" }, tag("N/A", "t-info"), el("strong", { text: "A data: URL is fetched without the CORS protocol (4.1)." }))); return; }
+  if (R.kind === "network") { out.appendChild(el("div", { cls: "verdict fail" }, tag("FAIL", "t-err"), el("strong", { text: "Network error, per the Fetch Standard." }), el("p", { text: R.netWhy }))); return; }
+  if (R.kind === "opaque") {
+    out.appendChild(el("div", { cls: "verdict info" }, tag("OPAQUE", "t-info"), el("strong", { text: "no-cors: the request goes out, but your script cannot read the response." }),
+      el("p", { text: "Per the Fetch Standard (4.1) the response is opaque: status 0, no readable headers, no readable body. Only no-CORS-safelisted request headers survive (Accept, Accept-Language, Content-Language, and Content-Type with a safelisted value). Nothing is checked, so there is nothing to fix on the server; if you need the response, use mode cors." })));
+    out.appendChild(sentTable(R));
+    return;
+  }
+  /* overall verdict */
+  var b = banner(R);
+  var v = el("div", { cls: "verdict " + b.kind }, tag(b.kind === "pass" ? "PASS" : b.kind === "split" ? "SPLIT" : "FAIL", b.kind === "pass" ? "t-ok" : b.kind === "split" ? "t-warn" : "t-err"), el("strong", { text: b.text }));
+  v.appendChild(el("p", { cls: "note", text: R.preflight ? "A preflight is sent because " + R.preflightWhy.join("; and ") + "." : "No preflight: the method is GET, HEAD or POST and every header is CORS-safelisted. The request goes straight out and only the actual response is checked." }));
+  out.appendChild(v);
+  R.warnings.forEach(function (w) { out.appendChild(el("div", { cls: "verdict split" }, tag("WARN", "t-warn"), el("strong", { text: w.title }), el("p", { text: w.text }))); });
+  /* failures */
+  if (R.fails.length) {
+    out.appendChild(el("h3", { text: "Failing steps, first one first" }));
+    R.fails.forEach(function (f, i) {
+      out.appendChild(el("div", { cls: "step" }, tag(f.step, f.engineAllows ? "t-warn" : "t-err"), el("strong", { text: (i === 0 ? "First failure: " : "Still fails after that: ") + f.title }), " ", el("span", { cls: "sec", text: "Fetch Standard " + f.sec }), el("p", { text: f.detail })));
+    });
+  }
+  /* divergences */
+  if (R.divergences.length) {
+    var dv = el("div", { cls: "diverge" }, el("h3", { text: "Shipping browsers differ here" }));
+    R.divergences.forEach(function (d) { dv.appendChild(el("p", {}, el("strong", { text: d.title + ". " }), d.text)); });
+    if (R.engineVerdict !== "pass") { dv.appendChild(el("p", { cls: "note", text: "For this request the difference does not change the outcome: another failing step above is enforced by shipping browsers too, so the request is blocked under both readings." })); }
+    out.appendChild(dv);
+  }
+  /* handoff side by side */
+  var g = el("div", { cls: "grid two" });
+  var left = el("div", { cls: "panel" }, el("h3", { text: "What the browser sends (per the Fetch Standard)" }));
+  if (R.preflight) {
+    var pl = ["OPTIONS " + path + " HTTP/1.1", "Origin: " + R.origin, "Accept: */*", "Access-Control-Request-Method: " + R.method];
+    if (R.acrh) { pl.push("Access-Control-Request-Headers: " + R.acrh); }
+    left.appendChild(el("p", { text: "1. The preflight:" }));
+    left.appendChild(pre(pl));
+    left.appendChild(el("p", { cls: "note", text: "Plus the browser's own headers. A preflight never carries cookies or your Authorization header (3.3.5), so an auth layer that answers 401 to OPTIONS kills it." }));
+  }
+  var al = [R.method + " " + path + " HTTP/1.1", "Origin: " + R.origin];
+  R.sent.forEach(function (h) { al.push(h.name + ": " + h.value + (h.implicit ? "   (implicit, from the body)" : "")); });
+  left.appendChild(el("p", { text: (R.preflight ? "2. Then, only if the preflight passes, the actual request:" : "The actual request:") }));
+  left.appendChild(pre(al));
+  left.appendChild(el("p", { cls: "note", text: R.cred === "include" ? "Credentials mode include: cookies and HTTP auth for the target are attached to the actual request." : "Credentials mode " + R.cred + ": no cookies go to a cross-origin target." }));
+  var right = el("div", { cls: "panel" }, el("h3", { text: "What the server answered" }));
+  if (R.preflight) {
+    var pr = ["status " + R.pfStatus + (R.pfParsed.status === null ? " (no status line, taken as 200)" : "")];
+    ["Access-Control-Allow-Origin", "Access-Control-Allow-Credentials", "Access-Control-Allow-Methods", "Access-Control-Allow-Headers", "Access-Control-Max-Age"].forEach(function (n) { var x = getHeader(R.pfParsed.headers, n); pr.push(n + ": " + (x === null ? "(absent)" : x)); });
+    right.appendChild(el("p", { text: "Preflight response, as the browser reads it (same-name values combined with a comma and space):" }));
+    right.appendChild(pre(pr));
+  } else {
+    right.appendChild(el("p", { cls: "note", text: "No preflight is sent, so the preflight response box is not used." }));
+  }
+  var ar = [];
+  ["Access-Control-Allow-Origin", "Access-Control-Allow-Credentials"].forEach(function (n) { var x = getHeader(R.acParsed.headers, n); ar.push(n + ": " + (x === null ? "(absent)" : x)); });
+  right.appendChild(el("p", { text: "Actual response:" }));
+  right.appendChild(pre(ar));
+  g.appendChild(left); g.appendChild(right);
+  out.appendChild(g);
+  /* fix */
+  if (R.fix && (R.fix.actual.length || R.fix.client.length)) {
+    var fp = el("div", { cls: "panel" }, el("h3", { text: "Minimal fix" }));
+    if (R.fix.method) {
+      fp.appendChild(el("p", { text: "Change the request first:" }));
+      fp.appendChild(el("ul", { cls: "tight" }, el("li", { text: R.fix.method })));
+      fp.appendChild(el("p", { cls: "note", text: "The server-side answer below names the method exactly as your code sends it now, as the Fetch Standard compares it. Use it only if the request has to stay as written: many routers then reject \"" + R.method + "\" on the real request." }));
+    }
+    if (R.fix.preflight.length) { fp.appendChild(el("p", { text: (R.fix.method ? "Server side, if the request stays as written, a" : "A") + "nswer the preflight (OPTIONS) with:" })); fp.appendChild(pre(R.fix.preflight)); }
+    fp.appendChild(el("p", { text: "Add to the actual response:" }));
+    fp.appendChild(pre(R.fix.actual));
+    fp.appendChild(el("p", { cls: "note", text: R.fix.starOk ? "Credentials mode is not include, so Access-Control-Allow-Origin: * also works instead of echoing the origin; then Vary: Origin is not needed." : "Credentials mode is include, so Access-Control-Allow-Origin must be the exact origin and * is not allowed anywhere in the answer." }));
+    if (R.fix.client.length) {
+      fp.appendChild(el("p", { text: "Or change the request instead:" }));
+      var ul = el("ul", { cls: "tight" });
+      R.fix.client.forEach(function (c) { ul.appendChild(el("li", { text: c })); });
+      fp.appendChild(ul);
+    }
+    out.appendChild(fp);
+  }
+  /* detail */
+  out.appendChild(sentTable(R));
+  var notes = R.notes.slice();
+  if (R.preflight) {
+    notes.push("Preflight cache: with no Access-Control-Max-Age the spec default is 5 seconds (4.8)" + (R.maxAge !== null ? "; this answer asks for " + R.maxAge + " seconds" : "") + ". A fix can look like it did nothing while an older answer is still cached. Engine ceilings read from source on 2026-10-01: Chromium 2 hours (kMaxTimeout, services/network/cors/preflight_result.cc), Firefox 86400 seconds (nsCORSListenerProxy.cpp), WebKit 600 seconds (maxPreflightCacheTimeout, CrossOriginPreflightResultCache.cpp).");
+  }
+  notes.push("Response headers your script can read beyond the safelisted ones are decided by Access-Control-Expose-Headers, which this checker does not evaluate.");
+  var nl = el("ul", { cls: "tight" });
+  notes.forEach(function (n) { nl.appendChild(el("li", { cls: "note", text: n })); });
+  out.appendChild(el("h3", { text: "Notes" }));
+  out.appendChild(nl);
+}
+function sentTable(R) {
+  var wrap = el("div", { cls: "tablewrap" });
+  var t = el("table");
+  t.appendChild(el("caption", { text: "Request headers, entry by entry" }));
+  var hr = el("tr", {}, el("th", { scope: "col", text: "Header" }), el("th", { scope: "col", text: "Bytes" }), el("th", { scope: "col", text: "Outcome" }));
+  t.appendChild(el("thead", {}, hr));
+  var tb = el("tbody");
+  var rows = R.safelistRows || R.sent.map(function (h) { return { name: h.name, value: h.value, ok: null, why: "sent" }; });
+  rows.forEach(function (r) {
+    tb.appendChild(el("tr", {}, el("td", {}, el("code", { text: r.name + ": " + r.value })), el("td", { text: String(r.value.length) }), el("td", {}, r.ok === null ? "sent" : r.ok ? el("span", { cls: "t-ok", text: "safelisted: " + r.why + (R.overflow ? ", but the 1024 byte total makes it unsafe" : "") }) : el("span", { cls: "t-err", text: "not safelisted: " + r.why }))));
+  });
+  R.dropped.forEach(function (d) { tb.appendChild(el("tr", {}, el("td", {}, el("code", { text: d.name + ": " + d.value })), el("td", { text: String(d.value.length) }), el("td", {}, el("span", { cls: "t-warn", text: d.why })))); });
+  if (!rows.length && !R.dropped.length) { tb.appendChild(el("tr", {}, el("td", { colspan: "3", text: "No request headers." }))); }
+  t.appendChild(tb);
+  wrap.appendChild(t);
+  return wrap;
+}
+
+/* ---------- inputs and examples ---------- */
+var O = "http://127.0.0.1:8601", T = "http://127.0.0.1:8602/items/7";
+function pfBlock(extra, status) { return ["HTTP/1.1 " + (status || 204), "Access-Control-Allow-Origin: " + O].concat(extra || []).join("\n"); }
+function base(over) {
+  var b = { origin: O, target: T, method: "GET", mode: "cors", credentials: "same-origin", headers: "", body: "none", blobType: "", preflight: pfBlock(), actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: " + O };
+  Object.keys(over || {}).forEach(function (k) { b[k] = over[k]; });
+  return b;
+}
+var EXAMPLES = [
+  { label: "Lowercase patch", input: base({ method: "patch", headers: "Content-Type: application/json", body: "string", preflight: pfBlock(["Access-Control-Allow-Methods: GET, POST, PATCH, DELETE", "Access-Control-Allow-Headers: Content-Type"]) }) },
+  { label: "Authorization under *", input: base({ headers: "Authorization: Bearer example-token", preflight: pfBlock(["Access-Control-Allow-Headers: *"]) }) },
+  { label: "Credentials with *", input: base({ credentials: "include", actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: *\nAccess-Control-Allow-Credentials: true" }) },
+  { label: "JSON POST", input: base({ method: "POST", headers: "Content-Type: application/json", body: "string", preflight: pfBlock([]), actual: "HTTP/1.1 201 Created\nAccess-Control-Allow-Origin: *" }) },
+  { label: "Save-Data header", input: base({ headers: "Save-Data: on", preflight: "HTTP/1.1 204\nAccess-Control-Allow-Origin: *", actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: *" }) },
+  { label: "Working PATCH", input: base({ method: "PATCH", headers: "Content-Type: application/json\nAuthorization: Bearer example-token", body: "string", credentials: "include", preflight: pfBlock(["Access-Control-Allow-Credentials: true", "Access-Control-Allow-Methods: PATCH", "Access-Control-Allow-Headers: Content-Type, Authorization"]), actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: " + O + "\nAccess-Control-Allow-Credentials: true\nVary: Origin" }) }
+];
+var FIELDS = { origin: "in-origin", target: "in-target", method: "in-method", mode: "in-mode", credentials: "in-cred", headers: "in-headers", body: "in-body", blobType: "in-blobtype", preflight: "in-preflight", actual: "in-actual" };
+function readInputs() { var o = {}; Object.keys(FIELDS).forEach(function (k) { o[k] = document.getElementById(FIELDS[k]).value; }); return o; }
+function writeInputs(o) { Object.keys(FIELDS).forEach(function (k) { document.getElementById(FIELDS[k]).value = o[k]; }); }
+function run() {
+  try { render(evaluate(readInputs())); }
+  catch (e) { var out = document.getElementById("out"); out.textContent = ""; out.appendChild(el("div", { cls: "err-box", role: "alert", text: "Internal error while evaluating: " + (e && e.message ? e.message : String(e)) })); }
+}
+
+/* ---------- self test ---------- */
+function A(n, cnt) { var s = ""; for (var i = 0; i < cnt; i++) { s += n; } return s; }
+var R7 = "https://rabbit.invalid", RT = "https://api.rabbit-test.invalid/";
+function rabbit(cred, acao, acac, shared) {
+  var actual = "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: " + acao + (acac ? "\nAccess-Control-Allow-Credentials: " + acac : "");
+  return { name: "3.3.5 table: " + cred + ", ACAO " + acao + ", ACAC " + (acac || "omitted"), spec: true, input: base({ origin: R7, target: RT, credentials: cred, actual: actual }), expect: { verdict: shared ? "pass" : "fail", preflight: false } };
+}
+var CASES = [
+  { name: "patch vs Access-Control-Allow-Methods: PATCH", input: base({ method: "patch", preflight: pfBlock(["Access-Control-Allow-Methods: PATCH"]) }), expect: { verdict: "fail", preflight: true, first: "E4" } },
+  { name: "lead example: the fix writes PATCH before any server change", spec: true, input: base({ method: "patch", headers: "Content-Type: application/json", body: "string", preflight: pfBlock(["Access-Control-Allow-Methods: GET, POST, PATCH, DELETE", "Access-Control-Allow-Headers: Content-Type"]) }), expect: { verdict: "fail", preflight: true, first: "E4", fixFirst: "client" } },
+  { name: "patch vs *", input: base({ method: "patch", preflight: pfBlock(["Access-Control-Allow-Methods: *"]) }), expect: { verdict: "pass", preflight: true } },
+  { name: "PATCH vs *", input: base({ method: "PATCH", preflight: pfBlock(["Access-Control-Allow-Methods: *"]) }), expect: { verdict: "pass", preflight: true } },
+  { name: "patch vs patch", input: base({ method: "patch", preflight: pfBlock(["Access-Control-Allow-Methods: patch"]) }), expect: { verdict: "pass", preflight: true } },
+  { name: "FOO vs *", input: base({ method: "FOO", preflight: pfBlock(["Access-Control-Allow-Methods: *"]) }), expect: { verdict: "pass", preflight: true } },
+  { name: "foo vs foo", input: base({ method: "foo", preflight: pfBlock(["Access-Control-Allow-Methods: foo"]) }), expect: { verdict: "pass", preflight: true } },
+  { name: "PATCH vs PATCH", input: base({ method: "PATCH", preflight: pfBlock(["Access-Control-Allow-Methods: PATCH"]) }), expect: { verdict: "pass", preflight: true } },
+  { name: "delete vs DELETE (normalized)", input: base({ method: "delete", preflight: pfBlock(["Access-Control-Allow-Methods: DELETE"]) }), expect: { verdict: "pass", preflight: true, method: "DELETE" } },
+  { name: "put vs put (normalized to PUT)", input: base({ method: "put", preflight: pfBlock(["Access-Control-Allow-Methods: put"]) }), expect: { verdict: "fail", preflight: true, first: "E4", method: "PUT" } },
+  { name: "POST with X-Test, ACAH x-test, ACAM GET", input: base({ method: "POST", headers: "X-Test: 1", preflight: pfBlock(["Access-Control-Allow-Methods: GET", "Access-Control-Allow-Headers: x-test"]) }), expect: { verdict: "pass", preflight: true } },
+  { name: "Authorization vs ACAH * (spec fails, engines allow)", input: base({ headers: "Authorization: Bearer t", preflight: pfBlock(["Access-Control-Allow-Headers: *"]) }), expect: { verdict: "fail", preflight: true, first: "E5", split: true, engine: "pass", banner: "split" } },
+  { name: "Authorization vs ACAH *, actual response lacks ACAO", spec: true, input: base({ headers: "Authorization: Bearer t", preflight: pfBlock(["Access-Control-Allow-Headers: *"]), actual: "HTTP/1.1 200 OK" }), expect: { verdict: "fail", preflight: true, first: "E5", split: true, engine: "fail", banner: "fail" } },
+  { name: "Authorization plus X-Foo vs ACAH *, preflight lacks ACAO", spec: true, input: base({ headers: "Authorization: Bearer t\nX-Foo: 1", preflight: "HTTP/1.1 204\nAccess-Control-Allow-Headers: *" }), expect: { verdict: "fail", preflight: true, first: "E1", split: true, engine: "fail", banner: "fail" } },
+  { name: "Authorization vs ACAH authorization", input: base({ headers: "Authorization: Bearer t", preflight: pfBlock(["Access-Control-Allow-Headers: authorization"]) }), expect: { verdict: "pass", preflight: true } },
+  { name: "Authorization plus X-Test vs \"*, Authorization\"", input: base({ headers: "Authorization: Bearer t\nX-Test: 1", preflight: pfBlock(["Access-Control-Allow-Headers: *, Authorization"]) }), expect: { verdict: "pass", preflight: true, acrh: "authorization,x-test" } },
+  { name: "include with ACAO *", input: base({ credentials: "include", actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: *\nAccess-Control-Allow-Credentials: true" }), expect: { verdict: "fail", preflight: false, first: "F" } },
+  { name: "include with X-Test, ACAO origin, ACAC true, ACAH *", input: base({ credentials: "include", headers: "X-Test: 1", preflight: pfBlock(["Access-Control-Allow-Credentials: true", "Access-Control-Allow-Headers: *"]), actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: " + O + "\nAccess-Control-Allow-Credentials: true" }), expect: { verdict: "fail", preflight: true, first: "E6" } },
+  { name: "include with ACAC True", input: base({ credentials: "include", actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: " + O + "\nAccess-Control-Allow-Credentials: True" }), expect: { verdict: "fail", preflight: false, first: "F" } },
+  { name: "include with ACAO origin and ACAC true", input: base({ credentials: "include", actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: " + O + "\nAccess-Control-Allow-Credentials: true" }), expect: { verdict: "pass", preflight: false } },
+  { name: "POST Content-Type application/json, ACAO * only", input: base({ method: "POST", headers: "Content-Type: application/json", preflight: "HTTP/1.1 204\nAccess-Control-Allow-Origin: *", actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: *" }), expect: { verdict: "fail", preflight: true, first: "E6" } },
+  { name: "Content-Type text/plain;charset=UTF-8", input: base({ method: "POST", headers: "Content-Type: text/plain;charset=UTF-8", actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: *" }), expect: { verdict: "pass", preflight: false } },
+  { name: "Content-Type text/plain; charset=\"utf-8\" (0x22 is unsafe)", input: base({ method: "POST", headers: "Content-Type: text/plain; charset=\"utf-8\"", preflight: "HTTP/1.1 204\nAccess-Control-Allow-Origin: *", actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: *" }), expect: { verdict: "fail", preflight: true, first: "E6" } },
+  { name: "Content-Type \"text/plain, application/json\" (strict MIME parse)", input: base({ method: "POST", headers: "Content-Type: text/plain, application/json", preflight: "HTTP/1.1 204\nAccess-Control-Allow-Origin: *", actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: *" }), expect: { verdict: "fail", preflight: true, first: "E6" } },
+  { name: "Accept of 129 bytes", input: base({ headers: "Accept: " + A("a", 129), preflight: "HTTP/1.1 204\nAccess-Control-Allow-Origin: *", actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: *" }), expect: { verdict: "fail", preflight: true, first: "E6" } },
+  { name: "Accept of 128 bytes", input: base({ headers: "Accept: " + A("a", 128), actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: *" }), expect: { verdict: "pass", preflight: false } },
+  { name: "Content-Language en_US", input: base({ headers: "Content-Language: en_US", preflight: "HTTP/1.1 204\nAccess-Control-Allow-Origin: *", actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: *" }), expect: { verdict: "fail", preflight: true, first: "E6" } },
+  { name: "Range bytes=0-10", input: base({ headers: "Range: bytes=0-10", actual: "HTTP/1.1 206 Partial Content\nAccess-Control-Allow-Origin: *" }), expect: { verdict: "pass", preflight: false } },
+  { name: "Range bytes=-10", input: base({ headers: "Range: bytes=-10", preflight: "HTTP/1.1 204\nAccess-Control-Allow-Origin: *", actual: "HTTP/1.1 206 Partial Content\nAccess-Control-Allow-Origin: *" }), expect: { verdict: "fail", preflight: true, first: "E6" } },
+  { name: "Save-Data: on, ACAO * only (Chromium note)", input: base({ headers: "Save-Data: on", preflight: "HTTP/1.1 204\nAccess-Control-Allow-Origin: *", actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: *" }), expect: { verdict: "fail", preflight: true, first: "E6", chromium: true } },
+  { name: "DPR: 2, ACAO * only (Chromium note)", input: base({ headers: "DPR: 2", preflight: "HTTP/1.1 204\nAccess-Control-Allow-Origin: *", actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: *" }), expect: { verdict: "fail", preflight: true, first: "E6", chromium: true } },
+  { name: "two ACAO lines with the same origin", input: base({ actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: " + O + "\nAccess-Control-Allow-Origin: " + O }), expect: { verdict: "fail", preflight: false, first: "F" } },
+  { name: "ACAO origin plus \"/\"", input: base({ actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: " + O + "/" }), expect: { verdict: "fail", preflight: false, first: "F" } },
+  { name: "preflight status 401 with all CORS headers", input: base({ headers: "X-Test: 1", preflight: pfBlock(["Access-Control-Allow-Headers: x-test"], 401) }), expect: { verdict: "fail", preflight: true, first: "E2" } },
+  { name: "OK preflight, actual response lacks ACAO", input: base({ headers: "X-Test: 1", preflight: pfBlock(["Access-Control-Allow-Headers: x-test"]), actual: "HTTP/1.1 200 OK" }), expect: { verdict: "fail", preflight: true, first: "F" } },
+  { name: "ACAH X-TEST for x-test", input: base({ headers: "X-Test: 1", preflight: pfBlock(["Access-Control-Allow-Headers: X-TEST"]) }), expect: { verdict: "pass", preflight: true } },
+  { name: "ACAH \"x-test, bad header\"", input: base({ headers: "X-Test: 1", preflight: pfBlock(["Access-Control-Allow-Headers: x-test, bad header"]) }), expect: { verdict: "fail", preflight: true, first: "E3" } },
+  { name: "1024 rule: safelisted values total 1025 bytes", spec: true, input: base({ headers: [A("Accept: " + A("a", 128) + "\n", 6), "Accept-Language: " + A("a", 128), "Content-Language: " + A("a", 128), "Accept: a"].join("\n"), preflight: "HTTP/1.1 204\nAccess-Control-Allow-Origin: *", actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: *" }), expect: { verdict: "fail", preflight: true, first: "E6", acrh: "accept,accept-language,content-language" } },
+  { name: "1024 rule control: exactly 1024 bytes", spec: true, input: base({ headers: [A("Accept: " + A("a", 128) + "\n", 6), "Accept-Language: " + A("a", 128), "Content-Language: " + A("a", 128)].join("\n"), actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: *" }), expect: { verdict: "pass", preflight: false } },
+  { name: "preflight status 302", spec: true, input: base({ headers: "X-Test: 1", preflight: pfBlock(["Access-Control-Allow-Headers: x-test"], 302) }), expect: { verdict: "fail", preflight: true, first: "E2" } },
+  rabbit("omit", "*", null, true),
+  rabbit("omit", "*", "true", true),
+  rabbit("omit", "https://rabbit.invalid/", null, false),
+  rabbit("omit", "https://rabbit.invalid", null, true),
+  rabbit("include", "*", "true", false),
+  rabbit("include", "https://rabbit.invalid", "true", true),
+  rabbit("include", "https://rabbit.invalid", "True", false),
+  { name: "CONNECT throws TypeError", input: base({ method: "CONNECT" }), expect: { kind: "typeerror" } },
+  { name: "GET with a body throws TypeError", spec: true, input: base({ body: "string" }), expect: { kind: "typeerror" } },
+  { name: "no-cors with PUT throws TypeError", input: base({ mode: "no-cors", method: "PUT" }), expect: { kind: "typeerror" } },
+  { name: "string body with no Content-Type: no preflight", spec: true, input: base({ method: "POST", body: "string", actual: "HTTP/1.1 200 OK\nAccess-Control-Allow-Origin: *" }), expect: { verdict: "pass", preflight: false } },
+  { name: "Cookie header is dropped, never sent", input: base({ headers: "Cookie: a=b" }), expect: { verdict: "pass", preflight: false, dropped: 1 } },
+  { name: "X-HTTP-Method-Override: TRACE dropped", input: base({ headers: "X-HTTP-Method-Override: TRACE" }), expect: { verdict: "pass", preflight: false, dropped: 1 } },
+  { name: "X-HTTP-Method-Override: PATCH kept", input: base({ headers: "X-HTTP-Method-Override: PATCH", preflight: pfBlock(["Access-Control-Allow-Headers: x-http-method-override"]) }), expect: { verdict: "pass", preflight: true, dropped: 0 } },
+  { name: "same-origin target: CORS does not apply", spec: true, input: base({ target: O + "/api" }), expect: { kind: "same-origin" } }
+];
+var CONTROL = { name: "positive control: asserts patch vs PATCH passes (it must not)", input: CASES[0].input, expect: { verdict: "pass", preflight: true } };
+
+function checkCase(c) {
+  var R = evaluate(c.input), e = c.expect, problems = [];
+  if (e.kind) { if (R.kind !== e.kind) { problems.push("kind " + R.kind); } }
+  else {
+    if (R.kind !== "cors") { problems.push("kind " + R.kind + (R.message ? ": " + R.message : "")); }
+    else {
+      if (R.verdict !== e.verdict) { problems.push("verdict " + R.verdict); }
+      if (e.preflight !== undefined && R.preflight !== e.preflight) { problems.push("preflight " + R.preflight); }
+      if (e.first && (!R.fails.length || R.fails[0].step !== e.first)) { problems.push("first step " + (R.fails.length ? R.fails[0].step : "none")); }
+      if (e.split !== undefined && !!R.split !== e.split) { problems.push("split " + !!R.split); }
+      if (e.engine && R.engineVerdict !== e.engine) { problems.push("engines " + R.engineVerdict); }
+      if (e.banner && banner(R).kind !== e.banner) { problems.push("headline " + banner(R).kind); }
+      if (e.fixFirst !== undefined && (R.fix && R.fix.method ? "client" : "server") !== e.fixFirst) { problems.push("fix leads with the " + (R.fix && R.fix.method ? "client" : "server")); }
+      if (e.chromium !== undefined && !!R.chromiumExtra !== e.chromium) { problems.push("chromium note " + !!R.chromiumExtra); }
+      if (e.acrh !== undefined && R.acrh !== e.acrh) { problems.push("ACRH " + q(R.acrh)); }
+      if (e.method !== undefined && R.method !== e.method) { problems.push("method " + R.method); }
+      if (e.dropped !== undefined && R.dropped.length !== e.dropped) { problems.push("dropped " + R.dropped.length); }
+    }
+  }
+  return { ok: problems.length === 0, got: problems.length ? problems.join("; ") : describe(R) };
+}
+function describe(R) {
+  if (R.kind !== "cors") { return R.kind; }
+  var s = R.verdict.toUpperCase() + (R.preflight ? ", preflight" : ", no preflight");
+  if (R.fails.length) { s += ", first " + R.fails[0].step; }
+  if (R.split) { s += R.engineVerdict === "pass" ? ", engines allow" : ", engines skip E5 but still block"; }
+  if (R.split || R.verdict !== "pass") { s += ", headline " + banner(R).kind.toUpperCase(); }
+  if (R.chromiumExtra) { s += ", Chromium note"; }
+  if (R.fix && R.fix.method) { s += ", fix leads with the client"; }
+  return s;
+}
+function expectText(e) {
+  if (e.kind) { return e.kind; }
+  var s = e.verdict.toUpperCase() + (e.preflight === undefined ? "" : e.preflight ? ", preflight" : ", no preflight");
+  if (e.first) { s += ", first " + e.first; }
+  if (e.split) { s += e.engine === "fail" ? ", engines skip E5 but still block" : ", engines allow"; }
+  if (e.banner) { s += ", headline " + e.banner.toUpperCase(); }
+  if (e.fixFirst) { s += ", fix leads with the " + e.fixFirst; }
+  if (e.chromium) { s += ", Chromium note"; }
+  if (e.acrh) { s += ", ACRH " + e.acrh; }
+  if (e.method) { s += ", sent as " + e.method; }
+  if (e.dropped !== undefined) { s += ", " + e.dropped + " dropped"; }
+  return s;
+}
+function runSelfTest() {
+  var host = document.getElementById("self"); host.textContent = "";
+  var t = el("table"); t.appendChild(el("caption", { text: "Self test results" }));
+  t.appendChild(el("thead", {}, el("tr", {}, el("th", { scope: "col", text: "Case" }), el("th", { scope: "col", text: "Fetch Standard expects" }), el("th", { scope: "col", text: "Result" }))));
+  var tb = el("tbody"), pass = 0, failN = 0;
+  CASES.forEach(function (c) {
+    var r;
+    try { r = checkCase(c); } catch (ex) { r = { ok: false, got: "threw " + ex.message }; }
+    if (r.ok) { pass++; } else { failN++; }
+    tb.appendChild(el("tr", {}, el("td", { text: c.name + (c.spec ? " (spec only)" : "") }), el("td", { text: expectText(c.expect) }), el("td", {}, el("span", { cls: r.ok ? "t-ok" : "t-err", text: (r.ok ? "PASS: " : "FAIL: ") + r.got }))));
+  });
+  var cr; try { cr = checkCase(CONTROL); } catch (ex) { cr = { ok: true, got: "threw" }; }
+  var controlFine = !cr.ok;
+  tb.appendChild(el("tr", {}, el("td", { text: CONTROL.name }), el("td", { text: "this assertion must fail" }), el("td", {}, el("span", { cls: controlFine ? "t-ok" : "t-err", text: controlFine ? "Control failed as designed: " + cr.got : "Control held. The suite is not trustworthy." }))));
+  t.appendChild(tb);
+  host.appendChild(t);
+  var sum = document.getElementById("self-summary");
+  sum.textContent = pass + " of " + CASES.length + " checks pass, " + failN + " fail. Positive control " + (controlFine ? "failed as designed." : "did NOT fail, so these results cannot be trusted.");
+  sum.className = failN === 0 && controlFine ? "t-ok" : "t-err";
+}
+
+/* ---------- live engine probes ---------- */
+var PU = "http://127.0.0.1:8602/";
+function probe(fn) { try { return String(fn()); } catch (e) { return e && e.name ? e.name : "error"; } }
+var PROBES = [
+  { name: "method patch", expect: "patch", run: function () { return new Request(PU, { method: "patch" }).method; } },
+  { name: "method Patch", expect: "Patch", run: function () { return new Request(PU, { method: "Patch" }).method; } },
+  { name: "method delete", expect: "DELETE", run: function () { return new Request(PU, { method: "delete" }).method; } },
+  { name: "method foo", expect: "foo", run: function () { return new Request(PU, { method: "foo" }).method; } },
+  { name: "method CONNECT", expect: "TypeError", run: function () { return new Request(PU, { method: "CONNECT" }).method; } },
+  { name: "method track", expect: "TypeError", run: function () { return new Request(PU, { method: "track" }).method; } },
+  { name: "Cookie header kept?", expect: "false", run: function () { return new Request(PU, { headers: { "Cookie": "a=b" } }).headers.has("cookie"); } },
+  { name: "Origin header kept?", expect: "false", run: function () { return new Request(PU, { headers: { "Origin": "https://x.invalid" } }).headers.has("origin"); } },
+  { name: "Sec-Foo header kept?", expect: "false", run: function () { return new Request(PU, { headers: { "Sec-Foo": "1" } }).headers.has("sec-foo"); } },
+  { name: "X-HTTP-Method-Override: TRACE kept?", expect: "false", run: function () { return new Request(PU, { headers: { "X-HTTP-Method-Override": "TRACE" } }).headers.has("x-http-method-override"); } },
+  { name: "X-HTTP-Method-Override: PATCH kept?", expect: "true", run: function () { return new Request(PU, { headers: { "X-HTTP-Method-Override": "PATCH" } }).headers.has("x-http-method-override"); } },
+  { name: "GET with a body", expect: "TypeError", run: function () { return new Request(PU, { body: "x" }).method; } },
+  { name: "POST string body, implicit Content-Type", expect: "text/plain;charset=UTF-8", run: function () { return new Request(PU, { method: "POST", body: "x" }).headers.get("content-type"); } },
+  { name: "no-cors with PUT", expect: "TypeError", run: function () { return new Request(PU, { mode: "no-cors", method: "PUT" }).method; } },
+  { name: "no-cors with X-Test kept?", expect: "false", run: function () { return new Request(PU, { mode: "no-cors", headers: { "X-Test": "1" } }).headers.has("x-test"); } },
+  { name: "default credentials", expect: "same-origin", run: function () { return new Request(PU).credentials; } },
+  { name: "default mode", expect: "cors", run: function () { return new Request(PU).mode; } }
+];
+function runEngine() {
+  var host = document.getElementById("engine"); host.textContent = "";
+  if (typeof Request !== "function") { host.appendChild(el("p", { cls: "t-err", text: "This browser has no Request constructor, so there is nothing to probe." })); return; }
+  var t = el("table"); t.appendChild(el("caption", { text: "Request constructor probes in this browser" }));
+  t.appendChild(el("thead", {}, el("tr", {}, el("th", { scope: "col", text: "Probe" }), el("th", { scope: "col", text: "Fetch Standard" }), el("th", { scope: "col", text: "This browser" }), el("th", { scope: "col", text: "Match" }))));
+  var tb = el("tbody"), mism = 0;
+  PROBES.forEach(function (p) {
+    var got = probe(p.run), ok = got === p.expect;
+    if (!ok) { mism++; }
+    tb.appendChild(el("tr", {}, el("td", { text: p.name }), el("td", {}, el("code", { text: p.expect })), el("td", {}, el("code", { text: got })), el("td", {}, el("span", { cls: ok ? "t-ok" : "t-err", text: ok ? "yes" : "MISMATCH" }))));
+  });
+  t.appendChild(tb);
+  host.appendChild(el("p", { cls: mism ? "t-err" : "t-ok", text: mism ? mism + " probe(s) differ from the Fetch Standard in this browser. The checker above still reports the spec verdict." : "Every probe matches the Fetch Standard in this browser." }));
+  host.appendChild(el("div", { cls: "tablewrap" }, t));
+}
+
+/* ---------- theme toggle ---------- */
+var themeBtn = document.getElementById("theme-toggle");
+function effectiveTheme() {
+  var a = document.documentElement.getAttribute("data-theme");
+  if (a === "dark" || a === "light") { return a; }
+  return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+function setTheme(t) {
+  document.documentElement.setAttribute("data-theme", t);
+  themeBtn.textContent = t === "dark" ? "Light" : "Dark";
+  themeBtn.setAttribute("aria-label", t === "dark" ? "Switch to light theme" : "Switch to dark theme");
+}
+(function () {
+  var KEY = "theme";
+  setTheme(effectiveTheme());
+  themeBtn.addEventListener("click", function () {
+    var next = effectiveTheme() === "dark" ? "light" : "dark";
+    setTheme(next);
+    try { localStorage.setItem(KEY, next); } catch (e) {}
+  });
+})();
+
+/* ---------- wire up ---------- */
+var exHost = document.getElementById("examples");
+EXAMPLES.forEach(function (ex) {
+  var b = el("button", { type: "button", text: ex.label });
+  b.addEventListener("click", function () { writeInputs(ex.input); run(); });
+  exHost.appendChild(b);
+});
+var timer = null;
+Object.keys(FIELDS).forEach(function (k) {
+  var node = document.getElementById(FIELDS[k]);
+  node.addEventListener("input", function () { clearTimeout(timer); timer = setTimeout(run, 150); });
+  node.addEventListener("change", run);
+});
+document.getElementById("btn-check").addEventListener("click", run);
+document.getElementById("btn-self").addEventListener("click", runSelfTest);
+document.getElementById("btn-engine").addEventListener("click", runEngine);
+writeInputs(EXAMPLES[0].input);
+run();
+runEngine();
+runSelfTest();
+})();
+</script>
+</body>
+</html>
