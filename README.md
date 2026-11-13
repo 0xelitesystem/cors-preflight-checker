@@ -131,4 +131,4 @@ This is an independent tool. It is not affiliated with, endorsed by, or connecte
 
 ## License
 
-MIT. Copyright (c) 2026 0xelitesystem. See [LICENSE](LICENSE).
+MIT. Copyright (c) 2026 RBL Industries LLC. See [LICENSE](LICENSE).
