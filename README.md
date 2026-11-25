@@ -126,7 +126,7 @@ This is an independent tool. It is not affiliated with, endorsed by, or connecte
 ## Related
 
 - https://github.com/0xelitesystem/cors-basics-reference (this page is the hands-on answer to its `05-common-errors` chapter)
-- https://github.com/0xelitesystem/http-header-analyzer
+- https://github.com/0xelitesystem/http-header-explainer
 - https://github.com/0xelitesystem/cli-http-request-builder
 
 ## License
